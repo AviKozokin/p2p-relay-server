@@ -44,7 +44,6 @@ extern crate env_logger;
 extern crate futures;
 extern crate libp2p;
 extern crate tokio;
-extern crate tokio_stdin_stdout;
 
 use futures::prelude::*;
 use libp2p::{
@@ -57,10 +56,11 @@ use libp2p::{
 
 fn main() {
     env_logger::init();
+
     // Create a random PeerId
     let local_key = secio::SecioKeyPair::ed25519_generated().unwrap();
-    let local_peer_id = local_key.to_peer_id();
-    println!("Local peer id: {:?}", local_peer_id);
+    let local_pub_key = local_key.to_public_key();
+    println!("Local peer id: {:?}", local_pub_key.clone().into_peer_id());
 
     // Set up a an encrypted DNS-enabled TCP Transport over the Mplex protocol
     let transport = libp2p::CommonTransport::new()
@@ -76,9 +76,9 @@ fn main() {
 
     // Create a Swarm to manage peers and events
     let mut swarm = {
-        let mut behaviour = libp2p::floodsub::FloodsubBehaviour::new(local_peer_id);
+        let mut behaviour = libp2p::floodsub::Floodsub::new(local_pub_key.clone().into_peer_id());
         behaviour.subscribe(floodsub_topic.clone());
-        libp2p::Swarm::new(transport, behaviour, libp2p::core::topology::MemoryTopology::empty())
+        libp2p::Swarm::new(transport, behaviour, libp2p::core::topology::MemoryTopology::empty(), local_pub_key)
     };
 
     // Listen on all interfaces and whatever port the OS assigns
@@ -103,7 +103,7 @@ fn main() {
     let stdin = tokio_stdin_stdout::stdin(0);
     let mut framed_stdin = FramedRead::new(stdin, LinesCodec::new());
 
-    // Kick it off
+    // Kick it off - we still need to use tokios functions directly
     tokio::run(futures::future::poll_fn(move || -> Result<_, ()> {
         loop {
             match framed_stdin.poll().expect("Error while polling stdin") {
